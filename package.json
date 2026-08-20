@@ -1,5 +1,5 @@
 {
-  "name": "naive-ui",
+  "name": "@hs/naive-ui",
   "version": "2.45.1",
   "packageManager": "pnpm@11.10.0",
   "description": "A Vue 3 Component Library. Fairly Complete, Theme Customizable, Uses TypeScript, Fast",
@@ -38,8 +38,8 @@
   "scripts": {
     "start": "pnpm run dev",
     "dev": "pnpm run clean && pnpm run gen-version && pnpm run gen-volar-dts && cross-env NODE_ENV=development vite",
-    "build:package": "pnpm run gen-version && pnpm run clean && pnpm run gen-volar-dts && tsc -b --force tsconfig.esm.json && tsx scripts/pre-build/pre-cjs-build.ts && tsc -b --force tsconfig.cjs.json && pnpm run build:dist && pnpm run test:umd && pnpm run test:esm && pnpm run post-build && rimraf {es,lib}/*.tsbuildinfo",
-    "build:package:vapor": "pnpm run gen-version && pnpm run clean && pnpm run gen-volar-dts && tsc -p src/tsconfig.esm.json --noEmit && tsc -p src/tsconfig.cjs.json --noEmit && cross-env BUILD_FORMAT=esm tsdown && cross-env BUILD_FORMAT=cjs tsdown && pnpm run build:dist:vapor && pnpm run test:umd && pnpm run test:esm && pnpm run post-build && rimraf {es,lib}/*.tsbuildinfo",
+    "build:package": "pnpm run gen-version && pnpm run clean && pnpm run gen-volar-dts && tsc -b --force tsconfig.esm.json && tsx scripts/pre-build/pre-cjs-build.ts && tsc -b --force tsconfig.cjs.json && pnpm run build:dist && pnpm run test:umd && pnpm run test:esm && pnpm run post-build && rimraf --glob es/*.tsbuildinfo lib/*.tsbuildinfo",
+    "build:package:vapor": "pnpm run gen-version && pnpm run clean && pnpm run gen-volar-dts && tsc -p src/tsconfig.esm.json --noEmit && tsc -p src/tsconfig.cjs.json --noEmit && cross-env BUILD_FORMAT=esm tsdown && cross-env BUILD_FORMAT=cjs tsdown && pnpm run build:dist:vapor && pnpm run test:umd && pnpm run test:esm && pnpm run post-build && rimraf --glob es/*.tsbuildinfo lib/*.tsbuildinfo",
     "build:dist": "cross-env BUILD_ENV=development vite build -c vite.build.mts && cross-env BUILD_ENV=production vite build -c vite.build.mts",
     "build:dist:vapor": "cross-env BUILD_ENV=development USE_VUE_JSX_VAPOR=true vite build -c vite.build.mts && cross-env BUILD_ENV=production USE_VUE_JSX_VAPOR=true vite build -c vite.build.mts",
     "build:themes": "tsc -b --force themes/tusimple/tsconfig.esm.json && tsc -b --force themes/tusimple/tsconfig.cjs.json",
