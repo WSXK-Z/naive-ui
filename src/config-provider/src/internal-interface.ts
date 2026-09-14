@@ -86,6 +86,7 @@ import type { NotificationTheme } from '../../notification/styles'
 import type { PageHeaderTheme } from '../../page-header/styles'
 import type { PaginationSize } from '../../pagination/src/public-types'
 import type { PaginationTheme } from '../../pagination/styles'
+import type { PanelTheme } from '../../panel/styles'
 import type { PopconfirmTheme } from '../../popconfirm/styles'
 import type { PopoverTheme } from '../../popover/styles'
 import type { PopselectSize } from '../../popselect/src/public-types'
@@ -188,6 +189,7 @@ export interface GlobalThemeWithoutCommon {
   Modal?: ModalTheme
   Notification?: NotificationTheme
   PageHeader?: PageHeaderTheme
+  Panel?: PanelTheme
   Pagination?: PaginationTheme
   Popconfirm?: PopconfirmTheme
   Popover?: PopoverTheme

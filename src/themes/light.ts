@@ -61,6 +61,7 @@ import { modalLight } from '../modal/styles'
 import { notificationLight } from '../notification/styles'
 import { pageHeaderLight } from '../page-header/styles'
 import { paginationLight } from '../pagination/styles'
+import { panelLight } from '../panel/styles'
 import { popconfirmLight } from '../popconfirm/styles'
 import { popoverLight } from '../popover/styles'
 import { popselectLight } from '../popselect/styles'
@@ -148,6 +149,7 @@ export const lightTheme: BuiltInGlobalTheme = {
   Modal: modalLight,
   Notification: notificationLight,
   PageHeader: pageHeaderLight,
+  Panel: panelLight,
   Pagination: paginationLight,
   Popconfirm: popconfirmLight,
   Popover: popoverLight,

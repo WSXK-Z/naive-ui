@@ -57,6 +57,7 @@ import { modalDark } from '../modal/styles'
 import { notificationDark } from '../notification/styles'
 import { pageHeaderDark } from '../page-header/styles'
 import { paginationDark } from '../pagination/styles'
+import { panelDark } from '../panel/styles'
 import { popconfirmDark } from '../popconfirm/styles'
 import { popoverDark } from '../popover/styles'
 import { popselectDark } from '../popselect/styles'
@@ -145,6 +146,7 @@ export const darkTheme: BuiltInGlobalTheme = {
   Modal: modalDark,
   Notification: notificationDark,
   PageHeader: pageHeaderDark,
+  Panel: panelDark,
   Pagination: paginationDark,
   Popconfirm: popconfirmDark,
   Popover: popoverDark,

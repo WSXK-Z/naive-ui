@@ -74,6 +74,7 @@ export {
   paginationDark,
   paginationRtl as unstablePaginationRtl
 } from './pagination/styles'
+export { panelDark } from './panel/styles'
 export { popconfirmDark } from './popconfirm/styles'
 export { popoverDark, popoverRtl as unstablePopoverRtl } from './popover/styles'
 export { popselectDark } from './popselect/styles'
