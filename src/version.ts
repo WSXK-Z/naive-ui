@@ -1,1 +1,1 @@
-export default '3.0.0-hs'
+export default '3.1.0-hs'
