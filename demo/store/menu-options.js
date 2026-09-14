@@ -800,6 +800,20 @@ export function createComponentMenuOptions({ lang, theme }) {
           enSuffix: true,
           path: '/split',
           isNew: true
+        },
+        {
+          en: 'Page',
+          zh: '页',
+          enSuffix: true,
+          path: '/page',
+          isNew: true
+        },
+        {
+          en: 'Panel',
+          zh: '面板',
+          enSuffix: true,
+          path: '/panel',
+          isNew: true
         }
       ]
     }),

@@ -505,6 +505,14 @@ export const enComponentRoutes = [
       import('../../src/page-header/demos/enUS/index.demo-entry.md')
   },
   {
+    path: 'page',
+    component: () => import('../../src/page/demos/enUS/index.demo-entry.md')
+  },
+  {
+    path: 'panel',
+    component: () => import('../../src/panel/demos/enUS/index.demo-entry.md')
+  },
+  {
     path: 'global-style',
     component: () =>
       import('../../src/global-style/demos/enUS/index.demo-entry.md')
@@ -925,6 +933,14 @@ export const zhComponentRoutes = [
     path: 'page-header',
     component: () =>
       import('../../src/page-header/demos/zhCN/index.demo-entry.md')
+  },
+  {
+    path: 'page',
+    component: () => import('../../src/page/demos/zhCN/index.demo-entry.md')
+  },
+  {
+    path: 'panel',
+    component: () => import('../../src/panel/demos/zhCN/index.demo-entry.md')
   },
   {
     path: 'global-style',
