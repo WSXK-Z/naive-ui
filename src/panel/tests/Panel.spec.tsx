@@ -1,20 +1,60 @@
-import type { PanelToolsSlotProps } from '../src/interface'
+import type { PanelGroup } from '../../composables'
+import type { PageInst } from '../../page'
+import type { PanelInst, PanelToolsSlotProps } from '../src/interface'
+import type { PanelStorage } from '../src/panelContext'
 import { mount } from '@vue/test-utils'
-import { h, nextTick } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
+import { usePanelGroup } from '../../composables'
 import { NPage } from '../../page'
 import { NPanel } from '../index'
 
 function createEvent(type: string, props: Record<string, unknown>): Event {
-  return Object.assign(new Event(type, { cancelable: true }), props)
+  return Object.assign(
+    new Event(type, { bubbles: true, cancelable: true }),
+    props
+  )
 }
 
-function getPanelVm(wrapper: { vm: unknown }): {
+function getPanelVm(wrapper: { vm: unknown }): PanelInst & {
   handlePointerdown: (e: PointerEvent) => void
+  handleResizePointerdown: (e: PointerEvent) => void
   toolsSlotProps: PanelToolsSlotProps
 } {
-  return wrapper.vm as unknown as {
+  return wrapper.vm as unknown as PanelInst & {
     handlePointerdown: (e: PointerEvent) => void
+    handleResizePointerdown: (e: PointerEvent) => void
     toolsSlotProps: PanelToolsSlotProps
+  }
+}
+
+function stubRect(
+  element: Element,
+  rect: { left: number, top: number, width: number, height: number }
+): void {
+  element.getBoundingClientRect = () =>
+    ({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => rect
+    }) as DOMRect
+}
+
+function createStorage(): PanelStorage & {
+  get: (key: string) => string | undefined
+} {
+  const store = new Map<string, string>()
+  return {
+    get: key => store.get(key),
+    getItem: key => store.get(key) ?? null,
+    setItem: (key, value) => {
+      store.set(key, value)
+    }
   }
 }
 
@@ -337,6 +377,279 @@ describe('n-panel', () => {
     expect(wrapper.find('.custom-tools').text()).toBe('100%')
     expect(wrapper.find('.n-panel-tools .n-panel-tools__title').exists()).toBe(
       false
+    )
+    wrapper.unmount()
+  })
+
+  it('should snap the offset to `drag-grid`', async () => {
+    const onUpdateOffset = vi.fn()
+    const wrapper = mount(NPanel, {
+      props: { movable: true, operating: true, dragGrid: 10, onUpdateOffset }
+    })
+    getPanelVm(wrapper).handlePointerdown(
+      createEvent('pointerdown', {
+        pointerId: 1,
+        button: 0,
+        clientX: 100,
+        clientY: 100
+      }) as PointerEvent
+    )
+    window.dispatchEvent(
+      createEvent('pointermove', { pointerId: 1, clientX: 113, clientY: 127 })
+    )
+    await nextTick()
+    expect(onUpdateOffset).toHaveBeenCalledWith([10, 30])
+    window.dispatchEvent(createEvent('pointerup', { pointerId: 1 }))
+    wrapper.unmount()
+  })
+
+  it('should keep the panel inside the page with `drag-boundary`', async () => {
+    const onUpdateOffset = vi.fn()
+    const wrapper = mount(NPage, {
+      slots: {
+        default: () => (
+          <NPanel
+            fixed
+            movable
+            operating
+            dragBoundary
+            onUpdateOffset={onUpdateOffset}
+          />
+        )
+      },
+      attachTo: document.body
+    })
+    const panelEl = wrapper.find('.n-panel').element
+    stubRect(panelEl, { left: 100, top: 100, width: 200, height: 100 })
+    stubRect(wrapper.find('.n-page').element, {
+      left: 0,
+      top: 0,
+      width: 500,
+      height: 400
+    })
+    getPanelVm(wrapper.findComponent(NPanel)).handlePointerdown(
+      createEvent('pointerdown', {
+        pointerId: 1,
+        button: 0,
+        clientX: 100,
+        clientY: 100
+      }) as PointerEvent
+    )
+    window.dispatchEvent(
+      createEvent('pointermove', { pointerId: 1, clientX: 500, clientY: 400 })
+    )
+    await nextTick()
+    expect(onUpdateOffset).toHaveBeenCalledWith([200, 200])
+    window.dispatchEvent(createEvent('pointerup', { pointerId: 1 }))
+    wrapper.unmount()
+  })
+
+  it('should stick to the edges of the page with `drag-snap`', async () => {
+    const onUpdateOffset = vi.fn()
+    const wrapper = mount(NPage, {
+      slots: {
+        default: () => (
+          <NPanel
+            fixed
+            movable
+            operating
+            dragSnap={10}
+            onUpdateOffset={onUpdateOffset}
+          />
+        )
+      }
+    })
+    const panelEl = wrapper.find('.n-panel').element
+    stubRect(panelEl, { left: 100, top: 100, width: 200, height: 100 })
+    stubRect(wrapper.find('.n-page').element, {
+      left: 0,
+      top: 0,
+      width: 500,
+      height: 400
+    })
+    getPanelVm(wrapper.findComponent(NPanel)).handlePointerdown(
+      createEvent('pointerdown', {
+        pointerId: 1,
+        button: 0,
+        clientX: 100,
+        clientY: 100
+      }) as PointerEvent
+    )
+    window.dispatchEvent(
+      createEvent('pointermove', { pointerId: 1, clientX: 8, clientY: 100 })
+    )
+    await nextTick()
+    expect(onUpdateOffset).toHaveBeenCalledWith([-100, 0])
+    window.dispatchEvent(createEvent('pointerup', { pointerId: 1 }))
+    wrapper.unmount()
+  })
+
+  it('should work with `resizable` prop', async () => {
+    const onUpdateWidth = vi.fn()
+    const onUpdateHeight = vi.fn()
+    const onUpdateOffset = vi.fn()
+    const wrapper = mount(NPanel, {
+      props: {
+        movable: true,
+        resizable: true,
+        onUpdateWidth,
+        onUpdateHeight,
+        onUpdateOffset
+      },
+      attachTo: document.body
+    })
+    expect(wrapper.find('.n-panel-resize-trigger').exists()).toBe(false)
+    await wrapper.setProps({ operating: true })
+    expect(wrapper.find('.n-panel-resize-trigger').exists()).toBe(true)
+
+    const panelEl = wrapper.find('.n-panel').element
+    stubRect(panelEl, { left: 100, top: 100, width: 200, height: 120 })
+    wrapper.find('.n-panel-resize-trigger').element.dispatchEvent(
+      createEvent('pointerdown', {
+        pointerId: 3,
+        button: 0,
+        clientX: 300,
+        clientY: 220
+      })
+    )
+    window.dispatchEvent(
+      createEvent('pointermove', { pointerId: 3, clientX: 340, clientY: 250 })
+    )
+    await nextTick()
+    expect(onUpdateWidth).toHaveBeenCalledWith(240)
+    expect(onUpdateHeight).toHaveBeenCalledWith(150)
+    expect(wrapper.find('.n-panel').attributes('style')).toContain(
+      'width: 240px'
+    )
+    // the resize trigger never starts a drag
+    expect(onUpdateOffset).not.toHaveBeenCalled()
+    window.dispatchEvent(createEvent('pointerup', { pointerId: 3 }))
+    wrapper.unmount()
+  })
+
+  it('should reset the size with the `reset` method', async () => {
+    const onUpdateWidth = vi.fn()
+    const wrapper = mount(NPanel, {
+      props: { resizable: true, width: 240, onUpdateWidth }
+    })
+    getPanelVm(wrapper).reset()
+    expect(onUpdateWidth).toHaveBeenCalledWith(undefined)
+
+    const uncontrolled = mount(NPanel, { props: { resizable: true } })
+    getPanelVm(uncontrolled).setSize({ width: 200, height: 100 })
+    await nextTick()
+    expect(uncontrolled.find('.n-panel').attributes('style')).toContain(
+      'width: 200px'
+    )
+    getPanelVm(uncontrolled).reset()
+    await nextTick()
+    expect(uncontrolled.find('.n-panel').attributes('style')).not.toContain(
+      'width:'
+    )
+    wrapper.unmount()
+    uncontrolled.unmount()
+  })
+
+  it('should persist the layout with `persist`', async () => {
+    const storage = createStorage()
+    storage.setItem(
+      'demo:chat',
+      JSON.stringify({
+        version: 1,
+        offset: [12, 24],
+        scale: 1.5,
+        width: 300,
+        height: 200,
+        collapsed: true
+      })
+    )
+    const wrapper = mount(NPage, {
+      props: { persistNamespace: 'demo', persistStorage: storage },
+      slots: {
+        default: () => <NPanel persist="chat" title="对话" />
+      }
+    })
+    // the restored layout is applied after the panel is mounted
+    await nextTick()
+    const panel = wrapper.find('.n-panel')
+    expect(panel.attributes('style')).toContain('--n-panel-x: 12px')
+    expect(panel.attributes('style')).toContain('--n-panel-y: 24px')
+    expect(panel.attributes('style')).toContain('--n-panel-scale: 1.5')
+    expect(panel.attributes('style')).toContain('width: 300px')
+    expect(panel.attributes('style')).toContain('display: none')
+    expect(wrapper.find('.n-panel-chip').exists()).toBe(true)
+
+    const panelVm = getPanelVm(wrapper.findComponent(NPanel))
+    panelVm.setScale(2)
+    panelVm.setSize({ width: 320 })
+    await new Promise(resolve => setTimeout(resolve, 300))
+    const persisted = JSON.parse(storage.get('demo:chat') as string)
+    expect(persisted.scale).toBe(2)
+    expect(persisted.width).toBe(320)
+    expect(persisted.collapsed).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('should work with the panel group of the page', async () => {
+    const wrapper = mount(NPage, {
+      slots: {
+        default: () => [
+          <NPanel name="chat" title="对话" />,
+          <NPanel name="debug" title="调试" />
+        ]
+      }
+    })
+    const pageVm = wrapper.findComponent(NPage).vm as unknown as PageInst
+    expect(pageVm.getPanels()).toHaveLength(2)
+    expect(pageVm.getPanel('chat')?.name).toBe('chat')
+    expect(pageVm.bringToFront('chat')).toBe(true)
+    expect(pageVm.bringToFront('unknown')).toBe(false)
+    await nextTick()
+    expect(pageVm.getPanel('chat')?.getZIndex() ?? 0).toBeGreaterThan(100)
+    expect(pageVm.getPanel('debug')?.getZIndex()).toBeNull()
+    expect(wrapper.findAll('.n-panel')[0].attributes('style')).toContain(
+      'z-index: 101'
+    )
+    wrapper.unmount()
+  })
+
+  it('should provide the panel group through `usePanelGroup`', () => {
+    let group: PanelGroup | null = null
+    const Consumer = defineComponent({
+      setup() {
+        group = usePanelGroup()
+        return () => h('div')
+      }
+    })
+    const wrapper = mount(NPage, {
+      slots: {
+        default: () => [<Consumer />, <NPanel name="chat" />]
+      }
+    })
+    const panelGroup = group as unknown as PanelGroup
+    expect(panelGroup).not.toBeNull()
+    expect(panelGroup.getPanels()).toHaveLength(1)
+    expect(panelGroup.getPanel('chat')?.name).toBe('chat')
+    expect(panelGroup.bringToFront('chat')).toBe(true)
+
+    const outside = mount(NPanel)
+    expect(usePanelGroup()).toBeNull()
+    wrapper.unmount()
+    outside.unmount()
+  })
+
+  it('should bring the operating panel to the front', async () => {
+    const wrapper = mount(NPage, {
+      slots: {
+        default: () => [<NPanel movable operating />, <NPanel />]
+      }
+    })
+    await nextTick()
+    expect(wrapper.findAll('.n-panel')[0].attributes('style')).toContain(
+      'z-index: 101'
+    )
+    expect(wrapper.findAll('.n-panel')[1].attributes('style')).not.toContain(
+      'z-index'
     )
     wrapper.unmount()
   })

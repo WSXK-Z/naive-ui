@@ -20,7 +20,19 @@ export default cB(
         bottom: 0;
         z-index: 30;
         pointer-events: none;
-      `
+      `,
+      [
+        cM('horizontal', [cB('page-anchor', 'flex-direction: row;')]),
+        cM('wrap', [
+          cB(
+            'page-anchor',
+            `
+              flex-wrap: wrap;
+              max-width: 100%;
+            `
+          )
+        ])
+      ]
     ),
     cB(
       'page-anchor',
@@ -30,7 +42,7 @@ export default cB(
         display: flex;
         flex-direction: column;
         align-items: flex-start;
-        gap: 10px;
+        gap: var(--n-page-anchor-gap, 10px);
         pointer-events: auto;
       `,
       [

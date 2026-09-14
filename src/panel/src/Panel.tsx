@@ -2,9 +2,16 @@ import type { CSSProperties, PropType, Ref, SlotsType, VNode } from 'vue'
 import type { ThemeProps } from '../../_mixins'
 import type { ExtractPublicPropTypes, MaybeArray } from '../../_utils'
 import type { PanelTheme, PanelThemeOverrides } from '../styles'
-import type { PanelOffset, PanelSlots, PanelToolsSlotProps } from './interface'
-import type { PanelAnchor } from './panelContext'
+import type {
+  PanelOffset,
+  PanelSize,
+  PanelSlots,
+  PanelToolsSlotProps
+} from './interface'
+import type { PanelAnchor, PanelGroupHandle } from './panelContext'
+import type { PanelRect } from './utils'
 import { off, on } from 'evtd'
+import { createId } from 'seemly'
 import {
   computed,
   defineComponent,
@@ -13,6 +20,7 @@ import {
   inject,
   mergeProps,
   onBeforeUnmount,
+  onMounted,
   ref,
   Teleport,
   watch
@@ -30,13 +38,22 @@ import { call, resolveSlotWithTypedProps } from '../../_utils'
 import { NButton } from '../../button'
 import { NTag } from '../../tag'
 import { panelLight } from '../styles'
-import { panelAnchorInjectionKey } from './panelContext'
+import { panelContextInjectionKey } from './panelContext'
+import {
+  readPanelPersistState,
+  resolvePanelPersistKey,
+  resolvePanelStorage,
+  writePanelPersistState
+} from './persistence'
 import style from './styles/index.cssr'
+import { resolvePanelDragDelta, resolvePanelResizeSize } from './utils'
 
 const panelScaleMin = 0.3
 const panelScaleMax = 3
 const panelScaleStep = 0.1
 const panelWheelScaleStep = 0.05
+// the layout is written back this long after the last change
+const panelPersistDelay = 200
 
 function resolveClosest(
   target: EventTarget | null,
@@ -81,6 +98,7 @@ function renderIconButton(
 export const panelProps = {
   ...(useTheme.props as ThemeProps<PanelTheme, PanelThemeOverrides>),
   title: String,
+  name: String,
   fixed: Boolean,
   anchor: {
     type: String as PropType<PanelAnchor>,
@@ -100,6 +118,13 @@ export const panelProps = {
     default: true
   },
   offset: Array as unknown as PropType<PanelOffset | undefined>,
+  resizable: Boolean,
+  width: Number,
+  height: Number,
+  dragGrid: Number,
+  dragSnap: Number,
+  dragBoundary: Boolean,
+  persist: String,
   operateTrigger: {
     type: String,
     default: 'self'
@@ -138,6 +163,18 @@ export const panelProps = {
   onUpdateScale: [Function, Array] as PropType<
     MaybeArray<(scale: number) => void>
   >,
+  'onUpdate:width': [Function, Array] as PropType<
+    MaybeArray<(width: number | undefined) => void>
+  >,
+  onUpdateWidth: [Function, Array] as PropType<
+    MaybeArray<(width: number | undefined) => void>
+  >,
+  'onUpdate:height': [Function, Array] as PropType<
+    MaybeArray<(height: number | undefined) => void>
+  >,
+  onUpdateHeight: [Function, Array] as PropType<
+    MaybeArray<(height: number | undefined) => void>
+  >,
   onCollapse: Function as PropType<() => void>,
   onExpand: Function as PropType<() => void>
 } as const
@@ -160,14 +197,18 @@ export default defineComponent({
       props,
       mergedClsPrefixRef
     )
-    const panelAnchorRegistry = inject(panelAnchorInjectionKey, null)
+    const panelContext = inject(panelContextInjectionKey, null)
+    const panelId = createId()
 
     const panelElRef = ref<HTMLElement | null>(null)
     const collapsedRef = ref(false)
     const operatingRef = ref(false)
     const draggingRef = ref(false)
+    const zIndexRef = ref<number | null>(null)
     const uncontrolledOffsetRef = ref<[number, number]>([0, 0])
     const uncontrolledScaleRef = ref(1)
+    const uncontrolledWidthRef = ref<number | undefined>(undefined)
+    const uncontrolledHeightRef = ref<number | undefined>(undefined)
     // scale written by the panel before its parent responds to the update event
     const pendingScaleRef = ref<number | null>(null)
 
@@ -181,6 +222,12 @@ export default defineComponent({
     const mergedScaleRef = computed(() => {
       return pendingScaleRef.value ?? props.scale ?? uncontrolledScaleRef.value
     })
+    const mergedWidthRef = computed(() => {
+      return props.width ?? uncontrolledWidthRef.value
+    })
+    const mergedHeightRef = computed(() => {
+      return props.height ?? uncontrolledHeightRef.value
+    })
     const hasTransformRef = computed(() => {
       const [x, y] = mergedOffsetRef.value
       return x !== 0 || y !== 0 || mergedScaleRef.value !== 1
@@ -191,12 +238,25 @@ export default defineComponent({
     const teleportTargetRef = computed(() => {
       if (!props.fixed)
         return null
-      return panelAnchorRegistry?.getAnchor(props.anchor) ?? null
+      return panelContext?.getAnchor(props.anchor) ?? null
     })
     const chipTeleportTargetRef = computed(() => {
       if (!collapsedRef.value)
         return null
-      return panelAnchorRegistry?.getAnchor(collapseTargetRef.value) ?? null
+      return panelContext?.getAnchor(collapseTargetRef.value) ?? null
+    })
+    const persistKeyRef = computed(() => {
+      if (!props.persist)
+        return null
+      return resolvePanelPersistKey(
+        panelContext?.persist.namespace,
+        props.persist
+      )
+    })
+    const persistStorageRef = computed(() => {
+      if (!props.persist)
+        return null
+      return resolvePanelStorage(panelContext?.persist.storage)
     })
 
     const cssVarsRef = computed(() => {
@@ -209,7 +269,8 @@ export default defineComponent({
           toolsColor,
           toolsBorderColor,
           toolsBoxShadow,
-          outlineColor
+          outlineColor,
+          resizeTriggerColor
         }
       } = themeRef.value
       return {
@@ -221,16 +282,22 @@ export default defineComponent({
         '--n-tools-color': toolsColor,
         '--n-tools-border-color': toolsBorderColor,
         '--n-tools-box-shadow': toolsBoxShadow,
-        '--n-outline-color': outlineColor
+        '--n-outline-color': outlineColor,
+        '--n-resize-trigger-color': resizeTriggerColor
       }
     })
 
     const panelStyleRef = computed(() => {
       const [x, y] = mergedOffsetRef.value
+      const width = mergedWidthRef.value
+      const height = mergedHeightRef.value
       return {
         '--n-panel-x': `${x}px`,
         '--n-panel-y': `${y}px`,
         '--n-panel-scale': String(mergedScaleRef.value),
+        width: width === undefined ? undefined : `${width}px`,
+        height: height === undefined ? undefined : `${height}px`,
+        zIndex: zIndexRef.value ?? undefined,
         display: collapsedRef.value ? 'none' : undefined
       }
     })
@@ -262,9 +329,86 @@ export default defineComponent({
       doUpdateScale(mergedScaleRef.value + step)
     }
 
-    function reset(): void {
+    function doUpdateWidth(width: number | undefined): void {
+      uncontrolledWidthRef.value = width
+      if (props.onUpdateWidth)
+        call(props.onUpdateWidth, width)
+      const _onUpdateWidth = props['onUpdate:width']
+      if (_onUpdateWidth)
+        call(_onUpdateWidth, width)
+    }
+
+    function doUpdateHeight(height: number | undefined): void {
+      uncontrolledHeightRef.value = height
+      if (props.onUpdateHeight)
+        call(props.onUpdateHeight, height)
+      const _onUpdateHeight = props['onUpdate:height']
+      if (_onUpdateHeight)
+        call(_onUpdateHeight, height)
+    }
+
+    function doReset(): void {
       doUpdateOffset([0, 0])
       doUpdateScale(1)
+      // an explicit size goes back to the size of the content
+      if (mergedWidthRef.value !== undefined)
+        doUpdateWidth(undefined)
+      if (mergedHeightRef.value !== undefined)
+        doUpdateHeight(undefined)
+    }
+
+    function doSetSize(size: PanelSize): void {
+      if ('width' in size)
+        doUpdateWidth(size.width)
+      if ('height' in size)
+        doUpdateHeight(size.height)
+    }
+
+    function bringToFront(): void {
+      const zIndex = panelContext?.bringToFront(panelId)
+      if (zIndex !== undefined && zIndex !== null)
+        zIndexRef.value = zIndex
+    }
+
+    let persistTimer: ReturnType<typeof setTimeout> | undefined
+
+    function restorePersistState(): void {
+      const key = persistKeyRef.value
+      const storage = persistStorageRef.value
+      if (!key || !storage)
+        return
+      const state = readPanelPersistState(storage, key)
+      if (!state)
+        return
+      if (state.offset)
+        doUpdateOffset(state.offset)
+      if (state.scale !== undefined)
+        doUpdateScale(state.scale)
+      if (state.width !== undefined)
+        doUpdateWidth(state.width)
+      if (state.height !== undefined)
+        doUpdateHeight(state.height)
+      if (state.collapsed !== undefined)
+        collapsedRef.value = state.collapsed
+    }
+
+    function schedulePersistState(): void {
+      const key = persistKeyRef.value
+      const storage = persistStorageRef.value
+      if (!key || !storage)
+        return
+      if (persistTimer !== undefined)
+        clearTimeout(persistTimer)
+      persistTimer = setTimeout(() => {
+        persistTimer = undefined
+        writePanelPersistState(storage, key, {
+          offset: mergedOffsetRef.value,
+          scale: mergedScaleRef.value,
+          width: mergedWidthRef.value,
+          height: mergedHeightRef.value,
+          collapsed: collapsedRef.value
+        })
+      }, panelPersistDelay)
     }
 
     function doUpdateOperating(operating: boolean): void {
@@ -305,13 +449,45 @@ export default defineComponent({
     let dragStartX = 0
     let dragStartY = 0
     let dragStartOffset: PanelOffset = [0, 0]
+    let dragStartRect: PanelRect | null = null
+    let dragContainerRect: PanelRect | null = null
+
+    function toPanelRect(rect: DOMRect): PanelRect {
+      return {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      }
+    }
+
+    function getContainerRect(): PanelRect | null {
+      const container = panelContext?.getContainer()
+      if (!container)
+        return null
+      return toPanelRect(container.getBoundingClientRect())
+    }
 
     function handlePointerMove(e: PointerEvent): void {
       if (dragPointerId === null || e.pointerId !== dragPointerId)
         return
+      const dx = e.clientX - dragStartX
+      const dy = e.clientY - dragStartY
+      const startRect = dragStartRect
+      const containerRect = dragContainerRect
+      const delta = startRect
+        ? resolvePanelDragDelta(dx, dy, {
+            startRect,
+            containerRect: containerRect ?? startRect,
+            grid: props.dragGrid,
+            // sticking and the boundary need a container to be meaningful
+            snap: containerRect ? props.dragSnap : undefined,
+            boundary: containerRect ? props.dragBoundary : false
+          })
+        : ([dx, dy] as [number, number])
       doUpdateOffset([
-        Math.round(dragStartOffset[0] + e.clientX - dragStartX),
-        Math.round(dragStartOffset[1] + e.clientY - dragStartY)
+        Math.round(dragStartOffset[0] + delta[0]),
+        Math.round(dragStartOffset[1] + delta[1])
       ])
     }
 
@@ -320,6 +496,8 @@ export default defineComponent({
       if (pointerId === null)
         return
       dragPointerId = null
+      dragStartRect = null
+      dragContainerRect = null
       draggingRef.value = false
       off('pointermove', window, handlePointerMove)
       off('pointerup', window, handlePointerUp)
@@ -348,15 +526,22 @@ export default defineComponent({
       ) {
         return
       }
+      const panelEl = panelElRef.value
       dragPointerId = e.pointerId
       dragStartX = e.clientX
       dragStartY = e.clientY
       dragStartOffset = mergedOffsetRef.value
+      dragStartRect = panelEl
+        ? toPanelRect(panelEl.getBoundingClientRect())
+        : null
+      dragContainerRect
+        = props.dragBoundary || props.dragSnap !== undefined
+          ? getContainerRect()
+          : null
       draggingRef.value = true
       on('pointermove', window, handlePointerMove)
       on('pointerup', window, handlePointerUp)
       on('pointercancel', window, handlePointerUp)
-      const panelEl = panelElRef.value
       if (panelEl) {
         // synthetic pointers and detached elements cannot be captured
         try {
@@ -364,6 +549,90 @@ export default defineComponent({
         }
         catch {}
       }
+    }
+
+    // the size of the panel is dragged by the resize trigger of the operating
+    // mode
+    let resizePointerId: number | null = null
+    let resizeStartX = 0
+    let resizeStartY = 0
+    let resizeStartRect: PanelRect | null = null
+    let resizeMinWidth = 0
+    let resizeMinHeight = 0
+
+    function handleResizePointerMove(e: PointerEvent): void {
+      if (resizePointerId === null || e.pointerId !== resizePointerId)
+        return
+      const startRect = resizeStartRect
+      if (!startRect)
+        return
+      // the size is a layout value while the pointer works on the visual size
+      const scale = props.scaleTransform ? mergedScaleRef.value : 1
+      doUpdateWidth(
+        resolvePanelResizeSize({
+          startSize: startRect.width,
+          delta: e.clientX - resizeStartX,
+          scale,
+          minSize: resizeMinWidth
+        })
+      )
+      doUpdateHeight(
+        resolvePanelResizeSize({
+          startSize: startRect.height,
+          delta: e.clientY - resizeStartY,
+          scale,
+          minSize: resizeMinHeight
+        })
+      )
+    }
+
+    function endResize(): void {
+      const pointerId = resizePointerId
+      if (pointerId === null)
+        return
+      resizePointerId = null
+      resizeStartRect = null
+      off('pointermove', window, handleResizePointerMove)
+      off('pointerup', window, handleResizePointerUp)
+      off('pointercancel', window, handleResizePointerUp)
+      const panelEl = panelElRef.value
+      if (panelEl) {
+        try {
+          panelEl.releasePointerCapture(pointerId)
+        }
+        catch {}
+      }
+    }
+
+    function handleResizePointerUp(e: PointerEvent): void {
+      if (resizePointerId === null || e.pointerId !== resizePointerId)
+        return
+      endResize()
+    }
+
+    function handleResizePointerdown(e: PointerEvent): void {
+      if (!mergedOperatingRef.value || !props.resizable || e.button !== 0)
+        return
+      const panelEl = panelElRef.value
+      if (!panelEl)
+        return
+      // the trigger is inside the panel, it must not start a drag
+      e.stopPropagation()
+      const computedStyle = window.getComputedStyle(panelEl)
+      resizePointerId = e.pointerId
+      resizeStartX = e.clientX
+      resizeStartY = e.clientY
+      resizeStartRect = toPanelRect(panelEl.getBoundingClientRect())
+      // the size limit of the usage is kept
+      resizeMinWidth = Number.parseFloat(computedStyle.minWidth) || 0
+      resizeMinHeight = Number.parseFloat(computedStyle.minHeight) || 0
+      on('pointermove', window, handleResizePointerMove)
+      on('pointerup', window, handleResizePointerUp)
+      on('pointercancel', window, handleResizePointerUp)
+      try {
+        panelEl.setPointerCapture(e.pointerId)
+      }
+      catch {}
     }
 
     function handleWheel(e: WheelEvent): void {
@@ -428,6 +697,8 @@ export default defineComponent({
       mergedOperatingRef,
       (operating) => {
         if (operating) {
+          // an operating panel is brought to the front of the page
+          bringToFront()
           on('keydown', document, handleKeydown)
           // captured, so it isn't swallowed by inner `stopPropagation`
           on('pointerdown', document, handleDocumentPointerdown, true)
@@ -436,6 +707,7 @@ export default defineComponent({
           off('keydown', document, handleKeydown)
           off('pointerdown', document, handleDocumentPointerdown, true)
           endDrag()
+          endResize()
         }
       },
       { immediate: true }
@@ -448,10 +720,47 @@ export default defineComponent({
       }
     )
 
+    // the layout is written back after the last change of it
+    watch(
+      [
+        mergedOffsetRef,
+        mergedScaleRef,
+        mergedWidthRef,
+        mergedHeightRef,
+        collapsedRef
+      ],
+      schedulePersistState
+    )
+
+    const groupHandle: PanelGroupHandle = {
+      id: panelId,
+      get name() {
+        return props.name
+      },
+      getRect: () => panelElRef.value?.getBoundingClientRect() ?? null,
+      getZIndex: () => zIndexRef.value,
+      reset: doReset,
+      collapse: doCollapse,
+      expand: doExpand,
+      bringToFront
+    }
+
+    onMounted(() => {
+      panelContext?.registerPanel(groupHandle)
+      // a panel which is already in operating mode is brought to the front too
+      if (mergedOperatingRef.value)
+        bringToFront()
+      restorePersistState()
+    })
+
     onBeforeUnmount(() => {
+      panelContext?.unregisterPanel(panelId)
+      if (persistTimer !== undefined)
+        clearTimeout(persistTimer)
       off('keydown', document, handleKeydown)
       off('pointerdown', document, handleDocumentPointerdown, true)
       endDrag()
+      endResize()
     })
 
     const themeClassHandle = inlineThemeDisabled
@@ -463,7 +772,7 @@ export default defineComponent({
       offset: mergedOffsetRef.value,
       setScale: doUpdateScale,
       setOffset: doUpdateOffset,
-      reset,
+      reset: doReset,
       collapse: doCollapse,
       exit: exitOperating
     }))
@@ -485,10 +794,20 @@ export default defineComponent({
       themeClass: themeClassHandle?.themeClass,
       onRender: themeClassHandle?.onRender,
       handlePointerdown,
+      handleResizePointerdown,
       handleWheel,
       handleDblclick,
       handleChipClick,
-      handleChipKeydown
+      handleChipKeydown,
+      // the methods are also reachable through a template ref
+      reset: doReset,
+      collapse: doCollapse,
+      expand: doExpand,
+      bringToFront,
+      setOffset: doUpdateOffset,
+      setScale: doUpdateScale,
+      setSize: doSetSize,
+      getRect: groupHandle.getRect
     }
   },
   render() {
@@ -574,6 +893,12 @@ export default defineComponent({
               ]
             )}
           </div>
+        ) : null}
+        {this.mergedOperating && this.resizable ? (
+          <div
+            class={`${mergedClsPrefix}-panel-resize-trigger`}
+            onPointerdown={this.handleResizePointerdown}
+          />
         ) : null}
         {$slots.default?.()}
       </div>

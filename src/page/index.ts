@@ -1,4 +1,5 @@
 export { panelAnchors } from '../panel/src/panelContext'
 export type { PanelAnchor } from '../panel/src/panelContext'
-export type { PageSlots } from './src/interface'
-export { default as NPage } from './src/Page'
+export type { PageInst, PageSlots } from './src/interface'
+export { default as NPage, pageProps } from './src/Page'
+export type { PageProps } from './src/Page'

@@ -68,4 +68,54 @@ describe('n-page', () => {
     expect(wrapper.find('.n-panel').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('should work with `anchors` prop', () => {
+    const wrapper = mount(NPage, {
+      props: { anchors: ['top-left', 'my-anchor'] },
+      slots: {
+        default: () => <NPanel fixed anchor="my-anchor" title="custom" />
+      }
+    })
+    expect(wrapper.findAll('.n-page-anchor')).toHaveLength(2)
+    expect(wrapper.find('.n-page-anchor--my-anchor').exists()).toBe(true)
+    expect(wrapper.find('.n-page-anchor--top-right').exists()).toBe(false)
+    expect(wrapper.find('.n-page-anchor--my-anchor .n-panel').exists()).toBe(
+      true
+    )
+    wrapper.unmount()
+  })
+
+  it('should render panel in place when its anchor is not configured', () => {
+    const wrapper = mount(NPage, {
+      props: { anchors: ['top-left'] },
+      slots: {
+        default: () => <NPanel fixed anchor="top-right" title="missing" />
+      }
+    })
+    expect(wrapper.find('.n-page-anchor--top-right').exists()).toBe(false)
+    expect(wrapper.find('.n-page > .n-panel').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('should work with `anchor-direction`, `anchor-wrap` and `anchor-gap`', () => {
+    const wrapper = mount(NPage, {
+      props: {
+        anchorDirection: 'horizontal',
+        anchorWrap: true,
+        anchorGap: 20
+      }
+    })
+    const anchors = wrapper.find('.n-page-anchors')
+    expect(anchors.classes('n-page-anchors--horizontal')).toBe(true)
+    expect(anchors.classes('n-page-anchors--wrap')).toBe(true)
+    expect(anchors.attributes('style')).toContain('--n-page-anchor-gap: 20px')
+
+    const stringGap = mount(NPage, { props: { anchorGap: '1rem' } })
+    expect(stringGap.find('.n-page-anchors').attributes('style')).toContain(
+      '--n-page-anchor-gap: 1rem'
+    )
+    expect(wrapper.find('.n-page-anchors--horizontal').exists()).toBe(true)
+    wrapper.unmount()
+    stringGap.unmount()
+  })
 })

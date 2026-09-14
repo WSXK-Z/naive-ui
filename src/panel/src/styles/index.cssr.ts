@@ -10,6 +10,7 @@ import { c, cB, cE, cM } from '../../../_utils/cssr'
 // --n-tools-border-color
 // --n-tools-box-shadow
 // --n-outline-color
+// --n-resize-trigger-color
 export default c([
   cB(
     'panel',
@@ -94,6 +95,22 @@ export default c([
             `
           )
         ]
+      ),
+      cB(
+        'panel-resize-trigger',
+        `
+          box-sizing: border-box;
+          position: absolute;
+          right: 0;
+          bottom: 0;
+          z-index: 1;
+          width: 12px;
+          height: 12px;
+          cursor: nwse-resize;
+          opacity: .6;
+          border-right: 2px solid var(--n-resize-trigger-color);
+          border-bottom: 2px solid var(--n-resize-trigger-color);
+        `
       )
     ]
   ),

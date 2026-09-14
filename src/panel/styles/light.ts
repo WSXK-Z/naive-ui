@@ -21,7 +21,8 @@ export function self(vars: ThemeCommonVars) {
     toolsColor: cardColor,
     toolsBorderColor: borderColor,
     toolsBoxShadow: boxShadow1,
-    outlineColor: primaryColor
+    outlineColor: primaryColor,
+    resizeTriggerColor: primaryColor
   }
 }
 
