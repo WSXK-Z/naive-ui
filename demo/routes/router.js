@@ -6,7 +6,7 @@ export const loadingBarApiRef = {}
 
 export default function createDemoRouter(app, routes) {
   const router = createRouter({
-    history: createWebHistory(),
+    history: createWebHistory(import.meta.env.BASE_URL),
     routes
   })
 

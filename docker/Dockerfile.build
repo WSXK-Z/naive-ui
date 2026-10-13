@@ -1,0 +1,25 @@
+
+# ---- 构建阶段 ----
+FROM coding.hanssemi.com.cn/storage/node:24-alpine AS build
+WORKDIR /app
+# build:site 通过 `bash ./scripts/pre-build-site/...` 执行，Alpine 自带 sh 但没有 bash
+# gcompat 让依赖 glibc 的原生二进制（esbuild 等）也能在 musl 上运行
+RUN apk add --no-cache bash gcompat
+# husky 在容器里没有 .git，跳过 install 时的 hook 安装
+ENV HUSKY=0
+ENV NODE_OPTIONS=--max-old-space-size=4096
+RUN corepack enable                     # 按 package.json 的 packageManager 拉 pnpm@11.10.0
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+COPY . .
+ARG SITE_BASE=/naive-ui/
+ENV SITE_BASE=$SITE_BASE
+# 等价于 build:site：库产物(es/lib/dist) → 打包成 node_modules/naive-ui → vite build → site/
+RUN pnpm run build:site
+
+FROM scratch AS artifacts
+COPY --from=build /app/site /site
+COPY --from=build /app/es /package/es
+COPY --from=build /app/lib /package/lib
+COPY --from=build /app/dist /package/dist

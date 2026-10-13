@@ -1,0 +1,7 @@
+node_modules
+.git
+site
+es
+lib
+dist
+*.tgz

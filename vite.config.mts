@@ -17,6 +17,7 @@ const testExclude = isBuildTimeTest
   : [...configDefaults.exclude, 'umd-test/**/*', 'esm-test/**/*']
 
 export default defineConfig({
+  base: process.env.SITE_BASE || '/',
   root: __dirname,
   plugins: [
     vueJsxVapor({
